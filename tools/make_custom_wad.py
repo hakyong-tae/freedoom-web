@@ -81,6 +81,55 @@ def build_pwad(lumps, out_path):
             f.write(struct.pack('<ii8s', pos, size, name.encode('ascii')))
 
 
+def decode_patch(p, palette):
+    """Decode a DOOM patch lump to an RGB image (opaque assumed)."""
+    w, h, _, _ = struct.unpack_from('<HHhh', p, 0)
+    cols = struct.unpack_from('<%di' % w, p, 8)
+    im = Image.new('P', (w, h))
+    im.putpalette(palette + palette[:3] * (256 - len(palette) // 3))
+    px = im.load()
+    for x, off in enumerate(cols):
+        while p[off] != 0xFF:
+            top, length = p[off], p[off + 1]
+            for i in range(length):
+                px[x, top + i] = p[off + 3 + i]
+            off += 4 + length
+    return im.convert('RGB')
+
+
+def make_wide_stbar(palette, name):
+    """Widescreen STBAR: original 320x32 bar centered, name plates on the
+    16:9 side extensions (the engine centers any wider-than-320 STBAR)."""
+    from PIL import ImageDraw, ImageFont
+
+    bar = decode_patch(read_lump(IWAD, 'STBAR'), palette)
+    W_WIDE, H = 426, 32
+    side = (W_WIDE - 320) // 2  # 53px per side
+    wide = Image.new('RGB', (W_WIDE, H))
+    wide.paste(bar, (side, 0))
+
+    # beveled dark-metal plates matching the bar's palette
+    plate = Image.new('RGB', (side, H), (62, 62, 62))
+    d = ImageDraw.Draw(plate)
+    for y in range(H):  # subtle vertical shading
+        v = 70 - abs(y - H // 2)
+        d.line([(0, y), (side, y)], fill=(v, v, v))
+    d.line([(0, 0), (side, 0)], fill=(110, 110, 110))      # top highlight
+    d.line([(0, H - 1), (side, H - 1)], fill=(20, 20, 20))  # bottom shadow
+
+    font = ImageFont.truetype('/System/Library/Fonts/Supplemental/Arial Black.ttf', 13)
+    for flip, x0 in ((False, 0), (True, W_WIDE - side)):
+        p = plate.copy()
+        d = ImageDraw.Draw(p)
+        bbox = d.textbbox((0, 0), name, font=font)
+        tx = (side - (bbox[2] - bbox[0])) // 2 - bbox[0]
+        ty = (H - (bbox[3] - bbox[1])) // 2 - bbox[1] - 1
+        d.text((tx + 1, ty + 1), name, font=font, fill=(18, 18, 18))   # engraved shadow
+        d.text((tx, ty), name, font=font, fill=(168, 30, 30))           # blood-red label
+        wide.paste(p, (x0, 0))
+    return wide
+
+
 def load_fullscreen(path):
     im = Image.open(path)
     if im.mode == 'RGBA':
@@ -109,6 +158,8 @@ def main():
         wb = round(logo.size[0] / logo.size[1] * 1.2 * hb)
         logo = logo.resize((wb, hb), Image.LANCZOS)
         lumps.append(('M_DOOM', to_doom_patch(logo, palette, leftoffset=wb // 2 - 66)))
+    if len(sys.argv) > 4:
+        lumps.append(('STBAR', to_doom_patch(make_wide_stbar(palette, sys.argv[4]), palette)))
     build_pwad(lumps, OUT)
     for name, data in lumps:
         w, h = struct.unpack_from('<HH', data, 0)
