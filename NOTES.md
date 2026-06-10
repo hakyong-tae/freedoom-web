@@ -23,12 +23,27 @@ freedoom-web/
 ```
 
 ## 부팅 아키텍처 (index.html)
-1. `fetch('freedoom1.wad')` — 스트리밍 다운로드 + 진행률 표시
-2. `userFileDict['freedoom1.wad'] = ['i', Uint8Array]` 형태로 보관
-3. 터치 기기면 `oly.js` 로드 후 `olySetup({...키맵...})` 호출
-4. `index.js` 동적 삽입 → Emscripten 런타임 초기화
-5. `Module.onRuntimeInitialized`에서 WAD를 MemFS(`FS.write`)에 기록
-6. `Module.arguments = ['-iwad', 'freedoom1.wad']` 로 엔진 기동
+1. 페이지 로드 즉시 `fetch('freedoom1.wad')` 백그라운드 다운로드 (진행률 표시)
+2. **탭투스타트**: 다운로드 완료 시 시작 버튼 활성화 — 사용자 제스처로만 부팅
+   (모바일 오디오 자동재생 정책 + Verse8 광고 제스처 규칙 충족)
+3. `userFileDict['freedoom1.wad'] = ['i', Uint8Array]` 형태로 보관
+4. 터치 기기면 `oly.js` 로드 후 `olySetup({...키맵...})` 호출
+5. `index.js` 동적 삽입 → Emscripten 런타임 초기화
+6. `Module.onRuntimeInitialized`에서 WAD를 MemFS(`FS.write`)에 기록
+7. `Module.arguments = ['-iwad', 'freedoom1.wad']` 로 엔진 기동
+
+## 광고 부활 시스템 (Verse8 Ads)
+엔진 자체를 패치해서 빌드 (engine-patches/ 참조, emsdk 6.0.0):
+- **C→JS**: `P_KillMobj`에서 콘솔플레이어 사망 시 `Module.onPlayerDeath()` 호출
+  - 부두돌(Boom 맵 스크립팅용 더미 플레이어) 필터: `target->player->mo == target`
+  - 데모 재생/넷게임 중엔 발화 안 함
+- **JS→C** (EMSCRIPTEN_KEEPALIVE export):
+  - `Module._JS_PlayerIsDead()` — 부활 제안 유효성 폴링 (400ms 워처가 오버레이 자동 철회)
+  - `Module._JS_RevivePlayer()` — 그 자리 부활 (체력/충돌플래그/스테이트/시점/무기 복원)
+- **플로우**: 사망 → 오버레이("광고 보고 부활"/"포기") → `Verse8Ads.showRewarded({placementId:'revive-hero'})`
+  - `rewarded` → `_JS_RevivePlayer()` / `dismissed` → 토스트+재시도 / `unsupported_env` → 세션 동안 부활 UI 비활성(바닐라 사망 흐름)
+- 보상이 저가치(부활 1회)라 서버 검증은 생략 (Verse8 docs 권고)
+- 로컬 테스트: URL에 `?simulateads` → 가짜 rewarded 응답으로 전체 플로우 시뮬레이션
 
 ### Module 커스텀 API (Dwasm 엔진이 직접 호출 — 제거 금지)
 - `hideConsole()` / `showConsole()` — 엔진이 그래픽모드 진입/이탈 시 호출

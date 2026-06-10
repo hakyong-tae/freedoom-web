@@ -1,20 +1,14 @@
 import { defineConfig } from 'vite'
 
+// NOTE: no COOP/COEP headers — the engine build doesn't use SharedArrayBuffer,
+// and cross-origin isolation would break the Verse8 ads SDK overlay/iframe.
 export default defineConfig({
   publicDir: 'public',
   server: {
     port: 3013,
-    headers: {
-      'Cross-Origin-Embedder-Policy': 'require-corp',
-      'Cross-Origin-Opener-Policy': 'same-origin',
-    },
   },
   preview: {
     port: 3013,
-    headers: {
-      'Cross-Origin-Embedder-Policy': 'require-corp',
-      'Cross-Origin-Opener-Policy': 'same-origin',
-    },
   },
   build: {
     outDir: 'dist',

@@ -5,35 +5,85 @@
 <meta name="viewport" content="width=device-width,height=device-height,initial-scale=1">
 <meta name="description" content="Freedoom in your browser — WebAssembly port based on Dwasm (PrBoom+/PrBoomX, GPL-2.0)">
 <title>Freedoom Web</title>
+<script src="https://unpkg.com/@verse8/ads@latest/dist/index.global.js" crossorigin="anonymous"></script>
 <style>
 body{background-color:#202020;color:#e0e0e0;font-family:Arial,Helvetica,sans-serif;font-size:16px;margin:0;text-align:center}
-#statusContainer{padding-top:30vh}
+#startContainer{padding-top:24vh}
+#startContainer h1{font-size:42px;letter-spacing:4px;margin-bottom:8px}
+#startContainer p{color:#909090;margin-top:0}
+#startButton{font-size:20px;font-weight:bold;padding:16px 48px;margin-top:24px;border:2px solid #b03030;border-radius:8px;background:#802020;color:#fff;cursor:pointer}
+#startButton:disabled{background:#404040;border-color:#555;color:#888;cursor:default}
+#statusContainer{display:none;padding-top:30vh}
 .spinner{height:50px;width:50px;margin:0 auto 16px;animation:rotation .8s linear infinite;border-left:10px solid #606060;border-right:10px solid #606060;border-bottom:10px solid #606060;border-top:10px solid #fff;border-radius:100%}
 @keyframes rotation{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 progress{width:250px;height:20px;margin-top:12px}
 textarea{margin:8px auto 0;font-family:monospace;font-size:14px;color:#ccc;border:1px solid #444;width:calc(100% - 24px);height:calc(100vh - 24px);background-color:inherit;resize:none;outline:none;display:none}
 canvas{border:0;background-color:#000;width:calc(min(100vw,100vh * 4/3));height:calc(min(100vh,100vw * .75));margin-top:calc(.5 * (100vh - (min(100vh,100vw * .75))));margin-left:auto;margin-right:auto;outline:none;display:none}
 @supports(height:1dvh){textarea{height:calc(100dvh - 24px)}canvas{width:calc(min(100dvw,100dvh * 4/3));height:calc(min(100dvh,100dvw * .75));margin-top:calc(.5 * (100dvh - (min(100dvh,100dvw * .75))))}}
+#reviveOverlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100}
+#revivePanel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#282828;border:2px solid #b03030;border-radius:12px;padding:28px 36px;min-width:260px}
+#revivePanel h2{margin:0 0 6px;color:#ff5040}
+#revivePanel p{margin:0 0 18px;color:#aaa;font-size:14px}
+#reviveAdButton{display:block;width:100%;font-size:17px;font-weight:bold;padding:13px 0;margin-bottom:10px;border:0;border-radius:8px;background:#2a8f2a;color:#fff;cursor:pointer}
+#reviveAdButton:disabled{background:#404040;color:#888;cursor:default}
+#giveUpButton{display:block;width:100%;font-size:14px;padding:9px 0;border:1px solid #555;border-radius:8px;background:transparent;color:#999;cursor:pointer}
+#toast{display:none;position:fixed;left:50%;bottom:9vh;transform:translateX(-50%);background:#333;color:#eee;border:1px solid #666;border-radius:8px;padding:10px 22px;font-size:14px;z-index:200;white-space:nowrap}
 </style>
 </head>
 <body>
+<div id="startContainer">
+  <h1>FREEDOOM</h1>
+  <p>Phase 1 &middot; powered by Dwasm (PrBoom+)</p>
+  <button id="startButton" disabled>로딩 중...</button>
+  <p style="margin-top:18px"><progress value="0" max="100" id="dlProgress"></progress></p>
+</div>
 <div id="statusContainer">
   <div class="spinner"></div>
-  <div id="status">Loading Freedoom...</div>
+  <div id="status">Starting...</div>
   <progress value="0" max="100" id="progress" hidden></progress>
 </div>
 <textarea id="output" readonly></textarea>
 <canvas id="canvas" oncontextmenu="event.preventDefault();" tabindex="-1"></canvas>
+<div id="reviveOverlay">
+  <div id="revivePanel">
+    <h2>YOU DIED</h2>
+    <p>이 자리에서 바로 부활할 수 있습니다</p>
+    <button id="reviveAdButton">&#9654; 광고 보고 부활</button>
+    <button id="giveUpButton">포기 (처음부터)</button>
+  </div>
+</div>
+<div id="toast"></div>
 <script>
+const startContainerElement = document.getElementById('startContainer');
+const startButton = document.getElementById('startButton');
+const dlProgressElement = document.getElementById('dlProgress');
 const statusContainerElement = document.getElementById('statusContainer');
 const statusElement = document.getElementById('status');
 const progressElement = document.getElementById('progress');
 const canvasElement = document.getElementById('canvas');
 const outputElement = document.getElementById('output');
+const reviveOverlay = document.getElementById('reviveOverlay');
+const reviveAdButton = document.getElementById('reviveAdButton');
+const giveUpButton = document.getElementById('giveUpButton');
+const toastElement = document.getElementById('toast');
 
 const IWAD_NAME = 'freedoom1.wad';
+const AD_PLACEMENT_REVIVE = 'revive-hero';
+const SIMULATE_ADS = window.location.search.indexOf('simulateads') !== -1;
 const useTouch = ('maxTouchPoints' in navigator) && navigator.maxTouchPoints > 1 && navigator.maxTouchPoints < 256;
 let userFileDict = {};
+let iwadReady = false;
+let adsAvailable = true;   // flips to false on unsupported_env
+let adBusy = false;
+let reviveWatcher = null;
+let toastTimer = null;
+
+function toast(msg) {
+  toastElement.textContent = msg;
+  toastElement.style.display = 'block';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toastElement.style.display = 'none'; }, 2600);
+}
 
 var Module = {
   _canLockPointer: true,
@@ -141,6 +191,11 @@ var Module = {
     }
   },
   softExit: (status) => { console.info('Program exited with code', status); },
+  // Called from the engine (EM_ASM in P_KillMobj) when the console player dies.
+  onPlayerDeath: function () {
+    console.info('Player died — offering rewarded revive.');
+    showReviveOffer();
+  },
   arguments: []
 };
 
@@ -150,8 +205,98 @@ function _printText(text) {
   outputElement.scrollTop = outputElement.scrollHeight;
 }
 
+// ---------- Rewarded-ad revive ----------
+
+function playerStillDead() {
+  try { return Module._JS_PlayerIsDead && Module._JS_PlayerIsDead() === 1; }
+  catch (e) { return false; }
+}
+
+function showReviveOffer() {
+  if (!adsAvailable && !SIMULATE_ADS) return; // no ad surface: vanilla death flow
+  if (!playerStillDead()) return;             // spurious notification (e.g. map scripting)
+  if (reviveOverlay.style.display === 'block') return; // already offering — keep button state
+  if (document.pointerLockElement) document.exitPointerLock();
+  reviveAdButton.disabled = false;
+  reviveOverlay.style.display = 'block';
+  // Player may respawn via keyboard (use key) or the level may change while
+  // the offer is up — withdraw the offer the moment it no longer applies.
+  clearInterval(reviveWatcher);
+  reviveWatcher = setInterval(function () {
+    if (!playerStillDead()) hideReviveOffer();
+  }, 400);
+}
+
+function hideReviveOffer() {
+  clearInterval(reviveWatcher);
+  reviveWatcher = null;
+  reviveOverlay.style.display = 'none';
+  canvasElement.focus();
+}
+
+function doRevive() {
+  if (Module._JS_RevivePlayer && Module._JS_RevivePlayer() === 1) {
+    hideReviveOffer();
+    Module.captureMouse();
+  } else {
+    // Player already respawned or state changed — nothing to grant.
+    hideReviveOffer();
+  }
+}
+
+async function showRewardedAd() {
+  if (SIMULATE_ADS) {
+    await new Promise(r => setTimeout(r, 800));
+    return { status: 'rewarded', reward: { amount: 1, type: 'revive' }, requestId: 'sim' };
+  }
+  if (typeof Verse8Ads === 'undefined') {
+    return { status: 'failed', error: { code: 'unsupported_env' }, requestId: '' };
+  }
+  return Verse8Ads.showRewarded({ placementId: AD_PLACEMENT_REVIVE });
+}
+
+reviveAdButton.addEventListener('click', async function () {
+  if (adBusy) return;
+  adBusy = true;
+  reviveAdButton.disabled = true;
+  try {
+    const result = await showRewardedAd();
+    switch (result.status) {
+      case 'rewarded':
+        doRevive();
+        break;
+      case 'dismissed':
+        toast('광고를 끝까지 봐야 부활할 수 있어요');
+        reviveAdButton.disabled = false;
+        break;
+      case 'failed':
+        if (result.error.code === 'busy') { reviveAdButton.disabled = false; break; }
+        if (result.error.code === 'unsupported_env') {
+          adsAvailable = false;
+          hideReviveOffer();
+          break;
+        }
+        toast('광고를 불러올 수 없어요. 잠시 후 다시 시도해주세요');
+        reviveAdButton.disabled = false;
+        break;
+    }
+  } catch (e) {
+    console.error('Ad error:', e);
+    toast('광고를 불러올 수 없어요');
+    reviveAdButton.disabled = false;
+  } finally {
+    adBusy = false;
+  }
+});
+
+giveUpButton.addEventListener('click', function () {
+  hideReviveOffer();
+  toast(useTouch ? '화면의 ␣ 버튼을 누르면 레벨 처음부터 다시 시작합니다' : 'Space/E 키를 누르면 레벨 처음부터 다시 시작합니다');
+});
+
+// ---------- Boot sequence ----------
+
 async function fetchIWAD() {
-  Module.setStatus('Downloading ' + IWAD_NAME + '... (0/?)');
   const response = await fetch(IWAD_NAME);
   if (!response.ok) throw new Error('Failed to fetch ' + IWAD_NAME + ': ' + response.status);
   const total = Number(response.headers.get('Content-Length')) || 0;
@@ -163,12 +308,16 @@ async function fetchIWAD() {
     if (done) break;
     chunks.push(value);
     received += value.length;
-    Module.setStatus('Downloading game data... (' + received + '/' + (total || '?') + ')');
+    if (total) { dlProgressElement.value = received; dlProgressElement.max = total; }
   }
   const data = new Uint8Array(received);
   let offset = 0;
   for (const chunk of chunks) { data.set(chunk, offset); offset += chunk.length; }
   userFileDict[IWAD_NAME] = ['i', data];
+  iwadReady = true;
+  dlProgressElement.style.display = 'none';
+  startButton.disabled = false;
+  startButton.textContent = useTouch ? '탭하여 시작' : '클릭하여 시작';
 }
 
 function bootWASM() {
@@ -183,9 +332,12 @@ function bootWASM() {
 
 function startGame() {
   window.scrollTo(0, 0);
+  startContainerElement.style.display = 'none';
+  statusContainerElement.style.display = 'block';
   let module_arguments = ['-iwad', IWAD_NAME];
   if (window.location.search.length > 1)
-    module_arguments = module_arguments.concat(window.location.search.substr(1).split('&'));
+    module_arguments = module_arguments.concat(
+      window.location.search.substr(1).split('&').filter(a => a !== 'simulateads'));
   Module['arguments'] = module_arguments;
   console.info('Freedoom Web -- based on Dwasm (PrBoom+/PrBoomX WebAssembly port, GPL-2.0)');
   Object.defineProperty(document, 'title', { set: function (value) { console.info(value); } });
@@ -215,10 +367,15 @@ function startGame() {
   }
 }
 
+startButton.addEventListener('click', function () {
+  if (!iwadReady) return;
+  startGame();
+});
+
 outputElement.value = '';
-fetchIWAD().then(startGame).catch(function (err) {
+fetchIWAD().catch(function (err) {
   console.error(err);
-  statusElement.textContent = 'Failed to load game data. Please reload the page.';
+  startButton.textContent = '로딩 실패 — 새로고침 해주세요';
 });
 </script>
 </body>

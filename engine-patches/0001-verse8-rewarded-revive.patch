@@ -1,0 +1,87 @@
+diff --git a/src/p_inter.c b/src/p_inter.c
+index dc53927..a39a6cf 100644
+--- a/src/p_inter.c
++++ b/src/p_inter.c
+@@ -50,6 +50,10 @@
+ #include "p_enemy.h"
+ #include "hu_tracers.h"
+ 
++#ifdef __EMSCRIPTEN__
++#include <emscripten.h>
++#endif
++
+ #ifdef __GNUG__
+ #pragma implementation "p_inter.h"
+ #endif
+@@ -803,6 +807,15 @@ static void P_KillMobj(mobj_t *source, mobj_t *target)
+ 
+       if (target->player == &players[consoleplayer] && (automapmode & am_active))
+         AM_Stop();    // don't die in auto map; switch view prior to dying
++
++#ifdef __EMSCRIPTEN__
++      // Dwasm-Verse8: notify the page so it can offer a rewarded-ad revive
++      // target->player->mo == target filters out voodoo dolls (extra
++      // player-1 starts used for Boom map scripting)
++      if (target->player == &players[consoleplayer] &&
++          target->player->mo == target && !demoplayback && !netgame)
++        EM_ASM({ if (Module.onPlayerDeath) Module.onPlayerDeath(); });
++#endif
+     }
+ 
+   if (e6y)
+diff --git a/src/p_user.c b/src/p_user.c
+index 4aa2e58..d403b13 100644
+--- a/src/p_user.c
++++ b/src/p_user.c
+@@ -588,3 +588,51 @@ void P_PlayerThink (player_t* player)
+     player->powers[pw_invulnerability] & 8) ? INVERSECOLORMAP :
+     player->powers[pw_infrared] > 4*32 || player->powers[pw_infrared] & 8;
+ }
++
++#ifdef __EMSCRIPTEN__
++//
++// Dwasm-Verse8: rewarded-ad revive support.
++// JS_PlayerIsDead lets the page poll whether the revive offer still applies.
++// JS_RevivePlayer resurrects the console player in place after a rewarded ad.
++//
++
++#include <emscripten.h>
++
++extern int initial_health; // from p_inter.h / g_game.c
++
++EMSCRIPTEN_KEEPALIVE int JS_PlayerIsDead(void)
++{
++  return playeringame[consoleplayer] &&
++         players[consoleplayer].playerstate == PST_DEAD;
++}
++
++EMSCRIPTEN_KEEPALIVE int JS_RevivePlayer(void)
++{
++  player_t* player = &players[consoleplayer];
++  mobj_t* mo = player->mo;
++
++  if (!playeringame[consoleplayer] || !mo ||
++      player->playerstate != PST_DEAD || mo->type != MT_PLAYER)
++    return 0;
++
++  player->playerstate = PST_LIVE;
++  player->health = initial_health;
++  mo->health = initial_health;
++  mo->flags |= MF_SOLID | MF_SHOOTABLE;
++  mo->flags &= ~MF_CORPSE;
++  mo->height = mo->info->height;
++  mo->radius = mo->info->radius;
++  mo->pitch = 0;
++  P_SetMobjState(mo, S_PLAY);
++  player->viewheight = VIEWHEIGHT;
++  player->deltaviewheight = 0;
++  player->damagecount = 0;
++  player->bonuscount = 0;
++  player->attacker = NULL;
++  player->extralight = 0;
++  player->fixedcolormap = 0;
++  player->refire = 0;
++  P_SetupPsprites(player);
++  return 1;
++}
++#endif // __EMSCRIPTEN__
