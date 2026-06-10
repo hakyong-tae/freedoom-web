@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,height=device-height,initial-scale=1">
+<meta name="description" content="Freedoom in your browser — WebAssembly port based on Dwasm (PrBoom+/PrBoomX, GPL-2.0)">
+<title>Freedoom Web</title>
+<style>
+body{background-color:#202020;color:#e0e0e0;font-family:Arial,Helvetica,sans-serif;font-size:16px;margin:0;text-align:center}
+#statusContainer{padding-top:30vh}
+.spinner{height:50px;width:50px;margin:0 auto 16px;animation:rotation .8s linear infinite;border-left:10px solid #606060;border-right:10px solid #606060;border-bottom:10px solid #606060;border-top:10px solid #fff;border-radius:100%}
+@keyframes rotation{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+progress{width:250px;height:20px;margin-top:12px}
+textarea{margin:8px auto 0;font-family:monospace;font-size:14px;color:#ccc;border:1px solid #444;width:calc(100% - 24px);height:calc(100vh - 24px);background-color:inherit;resize:none;outline:none;display:none}
+canvas{border:0;background-color:#000;width:calc(min(100vw,100vh * 4/3));height:calc(min(100vh,100vw * .75));margin-top:calc(.5 * (100vh - (min(100vh,100vw * .75))));margin-left:auto;margin-right:auto;outline:none;display:none}
+@supports(height:1dvh){textarea{height:calc(100dvh - 24px)}canvas{width:calc(min(100dvw,100dvh * 4/3));height:calc(min(100dvh,100dvw * .75));margin-top:calc(.5 * (100dvh - (min(100dvh,100dvw * .75))))}}
+</style>
+</head>
+<body>
+<div id="statusContainer">
+  <div class="spinner"></div>
+  <div id="status">Loading Freedoom...</div>
+  <progress value="0" max="100" id="progress" hidden></progress>
+</div>
+<textarea id="output" readonly></textarea>
+<canvas id="canvas" oncontextmenu="event.preventDefault();" tabindex="-1"></canvas>
+<script>
+const statusContainerElement = document.getElementById('statusContainer');
+const statusElement = document.getElementById('status');
+const progressElement = document.getElementById('progress');
+const canvasElement = document.getElementById('canvas');
+const outputElement = document.getElementById('output');
+
+const IWAD_NAME = 'freedoom1.wad';
+const useTouch = ('maxTouchPoints' in navigator) && navigator.maxTouchPoints > 1 && navigator.maxTouchPoints < 256;
+let userFileDict = {};
+
+var Module = {
+  _canLockPointer: true,
+  _depsLastLeft: 0,
+  _depsDone: 0,
+  _depsTotal: 0,
+  canvas: (function () {
+    canvasElement.addEventListener('webglcontextlost', function (e) {
+      e.preventDefault();
+      alert('WebGL context lost.  Please reload the page!');
+    }, false);
+    return canvasElement;
+  })(),
+  print: (function () { return function (text) { console.log(text); _printText(text); }; })(),
+  printErr: (function () { return function (text) { console.error(text); _printText('(!) ' + text); }; })(),
+  setStatus: function (text) {
+    if (!Module.setStatus.last) Module.setStatus.last = { time: Date.now(), text: '' };
+    if (text === Module.setStatus.last.text) return;
+    const m = text.match(/([^(]+)\((\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?|\?)\)/);
+    if (m) {
+      const now = Date.now();
+      if (now - Module.setStatus.last.time < 16.67) return;
+      Module.setStatus.last.time = now;
+      Module.setStatus.last.text = text;
+      const from = Number(m[2]);
+      const totalRaw = m[3];
+      if (totalRaw !== '?') {
+        const to = Number(totalRaw);
+        text = m[1].trim() + '<br>(' + (from / 1024).toFixed(0) + ' KiB of ' + (to / 1024).toFixed(0) + ' KiB)';
+        progressElement.value = from;
+        progressElement.max = to;
+        progressElement.hidden = false;
+      } else {
+        progressElement.hidden = true;
+        text = m[1].trim() + '<br>(' + (from / 1024).toFixed(0) + ' KiB)';
+      }
+    } else {
+      progressElement.hidden = true;
+    }
+    statusElement.innerHTML = text;
+  },
+  onRuntimeInitialized: function () {
+    for (let userFilename in userFileDict) {
+      const userFileData = userFileDict[userFilename][1];
+      const userFileSize = userFileData.length;
+      console.info('Writing to MemFS: ' + userFilename + ' (' + userFileSize + ' bytes)');
+      const userDestFile = FS.open('/' + userFilename, 'w');
+      FS.write(userDestFile, userFileData, 0, userFileSize, 0);
+      FS.close(userDestFile);
+    }
+    this.showConsole();
+    this.setStatus('');
+    userFileDict = {};
+    statusContainerElement.style.display = 'none';
+  },
+  monitorRunDependencies: function (left) {
+    let depsDiff = Module._depsLastLeft - left;
+    if (depsDiff !== 0) {
+      if (depsDiff > 0) Module._depsDone += depsDiff;
+      else Module._depsTotal -= depsDiff;
+      Module._depsLastLeft = left;
+      Module.setStatus('Preparing dependencies...<br>(' + Module._depsDone + ' done, ' + Module._depsTotal + ' found)');
+    }
+  },
+  hideConsole: function () {
+    if (useTouch && window.olyOn) olyOn();
+    outputElement.style.display = 'none';
+    canvasElement.style.display = 'block';
+    canvasElement.focus();
+  },
+  showConsole: function () {
+    if (useTouch && window.olyOff) olyOff();
+    canvasElement.style.display = 'none';
+    outputElement.style.display = 'block';
+    outputElement.scrollTop = outputElement.scrollHeight;
+    outputElement.focus();
+  },
+  captureMouse: function () {
+    if (!useTouch && Module._canLockPointer && !Module._attemptPointerLock()) {
+      Module._canLockPointer = false;
+      console.info('Delayed pointer lock requested.');
+      document.addEventListener('keydown', Module._lockPointerOnKey);
+    }
+  },
+  winResized: function () {
+    console.info('Detected window resize: ' + canvasElement.width + 'x' + canvasElement.height);
+    let dVW, dVH, aspX, aspY;
+    if (window.CSS.supports('height', '1dvh')) { dVW = '100dvw'; dVH = '100dvh'; }
+    else { dVW = '100vw'; dVH = '100vh'; }
+    aspX = canvasElement.width + ' / ' + canvasElement.height;
+    aspY = canvasElement.height + ' / ' + canvasElement.width;
+    canvasElement.style.width = 'calc(min(' + dVW + ', ' + dVH + ' * ' + aspX + '))';
+    canvasElement.style.height = 'calc(min(' + dVH + ', ' + dVW + ' * ' + aspY + '))';
+    canvasElement.style.marginTop = 'calc(0.5 * (' + dVH + ' - (min(' + dVH + ', ' + dVW + ' * ' + aspY + '))))';
+  },
+  _attemptPointerLock: function () {
+    if (document.pointerLockElement === null) canvasElement.requestPointerLock();
+    return document.pointerLockElement !== null;
+  },
+  _lockPointerOnKey: function (event) {
+    if ((event.key === 'Escape') || Module._attemptPointerLock()) {
+      document.removeEventListener('keydown', Module._lockPointerOnKey);
+      console.info('Delayed pointer lock complete.');
+      Module._canLockPointer = true;
+    }
+  },
+  softExit: (status) => { console.info('Program exited with code', status); },
+  arguments: []
+};
+
+function _printText(text) {
+  outputElement.value += text + '\n';
+  if (outputElement.value.length > 2097152) outputElement.value = outputElement.value.slice(-1048576);
+  outputElement.scrollTop = outputElement.scrollHeight;
+}
+
+async function fetchIWAD() {
+  Module.setStatus('Downloading ' + IWAD_NAME + '... (0/?)');
+  const response = await fetch(IWAD_NAME);
+  if (!response.ok) throw new Error('Failed to fetch ' + IWAD_NAME + ': ' + response.status);
+  const total = Number(response.headers.get('Content-Length')) || 0;
+  const reader = response.body.getReader();
+  const chunks = [];
+  let received = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    received += value.length;
+    Module.setStatus('Downloading game data... (' + received + '/' + (total || '?') + ')');
+  }
+  const data = new Uint8Array(received);
+  let offset = 0;
+  for (const chunk of chunks) { data.set(chunk, offset); offset += chunk.length; }
+  userFileDict[IWAD_NAME] = ['i', data];
+}
+
+function bootWASM() {
+  Module.setStatus('Starting engine...');
+  _printText('Freedoom Web is starting...');
+  _printText('');
+  const mainScript = document.createElement('script');
+  mainScript.src = 'index.js';
+  mainScript.async = true;
+  document.body.appendChild(mainScript);
+}
+
+function startGame() {
+  window.scrollTo(0, 0);
+  let module_arguments = ['-iwad', IWAD_NAME];
+  if (window.location.search.length > 1)
+    module_arguments = module_arguments.concat(window.location.search.substr(1).split('&'));
+  Module['arguments'] = module_arguments;
+  console.info('Freedoom Web -- based on Dwasm (PrBoom+/PrBoomX WebAssembly port, GPL-2.0)');
+  Object.defineProperty(document, 'title', { set: function (value) { console.info(value); } });
+  if (useTouch) {
+    Module.setStatus('Preparing controls...');
+    const olyScript = document.createElement('script');
+    olyScript.src = 'oly.js';
+    olyScript.async = true;
+    olyScript.onload = function () {
+      olySetup({
+        'Escape': { lbl: '&#8801;' }, 'Enter': { lbl: '&#8617;', pos: [15, 0] },
+        'ArrowUp': { lbl: '&#8593;', pos: [0, 15] }, 'ArrowDown': { lbl: '&#8595;', pos: [0, 30] },
+        'ArrowLeft': { lbl: '&#8592;', pos: [15, 15] }, 'ArrowRight': { lbl: '&#8594;', pos: [15, 30] },
+        'Tab': { lbl: '&#8677;', anc: 'R', pos: [30, 0] }, 'Minus': { lbl: '-', anc: 'R', pos: [15, 0] },
+        'Equal': { lbl: '+', anc: 'R' },
+        'KeyW': { lbl: 'W', anc: 'B', pos: [10, 20], shape: 'U' }, 'KeyS': { lbl: 'S', anc: 'B', pos: [10, 0], shape: 'D' },
+        'KeyA': { lbl: 'A', anc: 'B', pos: [0, 10], shape: 'L' }, 'KeyD': { lbl: 'D', anc: 'B', pos: [20, 10], shape: 'R' },
+        'ControlLeft': { lbl: '&#10753;', anc: 'RB', pos: [0, 10], shape: '' }, 'Space': { lbl: '&#9251;', anc: 'RB', pos: [20, 10], shape: '' },
+        'KeyY': { lbl: 'Y', anc: 'R', pos: [0, 15] }, 'KeyN': { lbl: 'N', anc: 'R', pos: [0, 30] },
+        'MWhlUp': { lbl: '&#9881;&#8593;', anc: 'R', pos: [15, 15] }, 'MWhlDn': { lbl: '&#9881;&#8595;', anc: 'R', pos: [15, 30] }
+      }, 3);
+      bootWASM();
+    };
+    document.body.appendChild(olyScript);
+  } else {
+    bootWASM();
+  }
+}
+
+outputElement.value = '';
+fetchIWAD().then(startGame).catch(function (err) {
+  console.error(err);
+  statusElement.textContent = 'Failed to load game data. Please reload the page.';
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "name": "freedoom-web",
+  "version": "1.0.0",
+  "description": "Freedoom in the browser — WebAssembly port based on Dwasm (PrBoom+/PrBoomX, GPL-2.0)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "license": "GPL-2.0",
+  "devDependencies": {
+    "vite": "^6.4.3"
+  }
+}
