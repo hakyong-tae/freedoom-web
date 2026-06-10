@@ -1,39 +1,8 @@
-diff --git a/src/p_inter.c b/src/p_inter.c
-index dc53927..a39a6cf 100644
---- a/src/p_inter.c
-+++ b/src/p_inter.c
-@@ -50,6 +50,10 @@
- #include "p_enemy.h"
- #include "hu_tracers.h"
- 
-+#ifdef __EMSCRIPTEN__
-+#include <emscripten.h>
-+#endif
-+
- #ifdef __GNUG__
- #pragma implementation "p_inter.h"
- #endif
-@@ -803,6 +807,15 @@ static void P_KillMobj(mobj_t *source, mobj_t *target)
- 
-       if (target->player == &players[consoleplayer] && (automapmode & am_active))
-         AM_Stop();    // don't die in auto map; switch view prior to dying
-+
-+#ifdef __EMSCRIPTEN__
-+      // Dwasm-Verse8: notify the page so it can offer a rewarded-ad revive
-+      // target->player->mo == target filters out voodoo dolls (extra
-+      // player-1 starts used for Boom map scripting)
-+      if (target->player == &players[consoleplayer] &&
-+          target->player->mo == target && !demoplayback && !netgame)
-+        EM_ASM({ if (Module.onPlayerDeath) Module.onPlayerDeath(); });
-+#endif
-     }
- 
-   if (e6y)
 diff --git a/src/p_user.c b/src/p_user.c
-index 4aa2e58..ac6ea7f 100644
+index 4aa2e58..4f28e61 100644
 --- a/src/p_user.c
 +++ b/src/p_user.c
-@@ -588,3 +588,112 @@ void P_PlayerThink (player_t* player)
+@@ -588,3 +588,133 @@ void P_PlayerThink (player_t* player)
      player->powers[pw_invulnerability] & 8) ? INVERSECOLORMAP :
      player->powers[pw_infrared] > 4*32 || player->powers[pw_infrared] & 8;
  }
@@ -46,6 +15,7 @@ index 4aa2e58..ac6ea7f 100644
 +//
 +
 +#include <emscripten.h>
++#include "m_menu.h"
 +
 +extern int initial_health; // from p_inter.h / g_game.c
 +extern int maxhealth;
@@ -144,5 +114,25 @@ index 4aa2e58..ac6ea7f 100644
 +  if (gave)
 +    player->bonuscount += 6;
 +  return gave;
++}
++
++// JS_SetPaused: pause or unpause the game from JS (e.g. during an ad break).
++// Only takes effect during actual gameplay (GS_LEVEL).
++EMSCRIPTEN_KEEPALIVE void JS_SetPaused(int p)
++{
++  if (gamestate == GS_LEVEL)
++    paused = p ? 1 : 0;
++}
++
++// JS_OpenMenu: called from JS to open the main menu programmatically.
++// Works from the title screen, in-game, and intermission.
++EMSCRIPTEN_KEEPALIVE int JS_OpenMenu(void)
++{
++  if (!menuactive)
++  {
++    M_StartControlPanel();
++    return 1;
++  }
++  return 0;
 +}
 +#endif // __EMSCRIPTEN__
