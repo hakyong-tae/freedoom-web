@@ -1,4 +1,7 @@
-# Freedoom Web — 구조 분석 노트
+# V8m (Freedoom Web) — 구조 분석 노트
+
+> 게임명 V8m = "V8doom" 줄임말 (8 = oo). 커스텀 아트는 `public/custom.wad` (PWAD)로 교체 예정 —
+> 존재하면 자동 로드되어 원본 위에 덮임 (TITLEPIC, M_DOOM, M_* 메뉴 그래픽 등).
 
 ## 개요
 - **게임**: Freedoom Phase 1 (v0.13.0) — DOOM 호환 100% 무료 IWAD
@@ -39,7 +42,7 @@ freedoom-web/
   - 데모 재생/넷게임 중엔 발화 안 함
 - **JS→C** (EMSCRIPTEN_KEEPALIVE export):
   - `Module._JS_PlayerIsDead()` — 부활 제안 유효성 폴링 (400ms 워처가 오버레이 자동 철회)
-  - `Module._JS_RevivePlayer()` — 그 자리 부활 (체력/충돌플래그/스테이트/시점/무기 복원)
+  - `Module._JS_RevivePlayer()` — 그 자리 부활 (체력/충돌플래그/스테이트/시점/무기 복원 + 3초 무적 `pw_invulnerability`)
 - **플로우**: 사망 → 오버레이("광고 보고 부활"/"포기") → `Verse8Ads.showRewarded({placementId:'revive-hero'})`
   - `rewarded` → `_JS_RevivePlayer()` / `dismissed` → 토스트+재시도 / `unsupported_env` → 세션 동안 부활 UI 비활성(바닐라 사망 흐름)
 - 보상이 저가치(부활 1회)라 서버 검증은 생략 (Verse8 docs 권고)

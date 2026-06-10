@@ -30,10 +30,10 @@ index dc53927..a39a6cf 100644
  
    if (e6y)
 diff --git a/src/p_user.c b/src/p_user.c
-index 4aa2e58..d403b13 100644
+index 4aa2e58..15c873f 100644
 --- a/src/p_user.c
 +++ b/src/p_user.c
-@@ -588,3 +588,51 @@ void P_PlayerThink (player_t* player)
+@@ -588,3 +588,52 @@ void P_PlayerThink (player_t* player)
      player->powers[pw_invulnerability] & 8) ? INVERSECOLORMAP :
      player->powers[pw_infrared] > 4*32 || player->powers[pw_infrared] & 8;
  }
@@ -81,6 +81,7 @@ index 4aa2e58..d403b13 100644
 +  player->extralight = 0;
 +  player->fixedcolormap = 0;
 +  player->refire = 0;
++  player->powers[pw_invulnerability] = 3*TICRATE; // 3s of mercy after ad revive
 +  P_SetupPsprites(player);
 +  return 1;
 +}

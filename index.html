@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,height=device-height,initial-scale=1">
 <meta name="description" content="Freedoom in your browser — WebAssembly port based on Dwasm (PrBoom+/PrBoomX, GPL-2.0)">
-<title>V8-Doom</title>
+<title>V8m</title>
 <script src="https://unpkg.com/@verse8/ads@latest/dist/index.global.js" crossorigin="anonymous"></script>
 <style>
 body{background-color:#202020;color:#e0e0e0;font-family:Arial,Helvetica,sans-serif;font-size:16px;margin:0;text-align:center}
@@ -37,7 +37,7 @@ canvas{border:0;background-color:#000;width:calc(min(100vw,100vh * 4/3));height:
 </head>
 <body>
 <div id="startContainer">
-  <h1>V8-Doom</h1>
+  <h1>V8m</h1>
   <p>Powered by Yong</p>
   <button id="startButton" disabled>LOADING...</button>
   <p style="margin-top:22px;margin-bottom:0"><progress value="0" max="100" id="dlProgress"></progress></p>
@@ -301,6 +301,20 @@ giveUpButton.addEventListener('click', function () {
 
 // ---------- Boot sequence ----------
 
+// Optional art/mod overlay: if public/custom.wad exists it is loaded as a
+// PWAD on top of the IWAD (menu graphics, title screen, sounds, maps...).
+async function fetchOptionalPWAD() {
+  try {
+    const r = await fetch('custom.wad');
+    if (!r.ok) return;
+    const buf = new Uint8Array(await r.arrayBuffer());
+    const magic = String.fromCharCode.apply(null, buf.slice(0, 4));
+    if (magic !== 'PWAD') return; // 404 fallback pages etc. won't match
+    userFileDict['custom.wad'] = ['p', buf];
+    console.info('custom.wad loaded (' + buf.length + ' bytes)');
+  } catch (e) { /* no overlay — vanilla assets */ }
+}
+
 async function fetchIWAD() {
   const response = await fetch(IWAD_NAME);
   if (!response.ok) throw new Error('Failed to fetch ' + IWAD_NAME + ': ' + response.status);
@@ -340,6 +354,8 @@ function startGame() {
   startContainerElement.style.display = 'none';
   statusContainerElement.style.display = 'block';
   let module_arguments = ['-iwad', IWAD_NAME];
+  if (userFileDict['custom.wad'])
+    module_arguments = module_arguments.concat(['-file', 'custom.wad']);
   if (window.location.search.length > 1)
     module_arguments = module_arguments.concat(
       window.location.search.substr(1).split('&').filter(a => a !== 'simulateads'));
@@ -378,7 +394,7 @@ startButton.addEventListener('click', function () {
 });
 
 outputElement.value = '';
-fetchIWAD().catch(function (err) {
+Promise.all([fetchIWAD(), fetchOptionalPWAD()]).catch(function (err) {
   console.error(err);
   startButton.textContent = 'LOAD FAILED — PLEASE REFRESH';
 });

@@ -1,4 +1,4 @@
-# V8-Doom (freedoom-web)
+# V8m (freedoom-web)
 
 Freedoom Phase 1 running in the browser, packaged as a Vite project for Verse8.
 

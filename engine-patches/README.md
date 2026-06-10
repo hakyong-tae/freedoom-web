@@ -14,7 +14,8 @@ Adds rewarded-ad revive support for the Verse8 platform:
 - `src/p_user.c` — two `EMSCRIPTEN_KEEPALIVE` exports:
   - `JS_PlayerIsDead()` — lets the page check whether the revive offer still applies.
   - `JS_RevivePlayer()` — resurrects the console player in place (restores
-    health, collision flags, state, view height, and weapon sprites).
+    health, collision flags, state, view height, and weapon sprites) and
+    grants 3 seconds of vanilla invulnerability (`pw_invulnerability`).
 
 ## Rebuilding
 
