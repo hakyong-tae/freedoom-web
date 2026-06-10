@@ -30,10 +30,10 @@ index dc53927..a39a6cf 100644
  
    if (e6y)
 diff --git a/src/p_user.c b/src/p_user.c
-index 4aa2e58..cae809b 100644
+index 4aa2e58..ac6ea7f 100644
 --- a/src/p_user.c
 +++ b/src/p_user.c
-@@ -588,3 +588,76 @@ void P_PlayerThink (player_t* player)
+@@ -588,3 +588,112 @@ void P_PlayerThink (player_t* player)
      player->powers[pw_invulnerability] & 8) ? INVERSECOLORMAP :
      player->powers[pw_infrared] > 4*32 || player->powers[pw_infrared] & 8;
  }
@@ -108,5 +108,41 @@ index 4aa2e58..cae809b 100644
 +  player->mo->health = maxhealth;
 +  player->bonuscount += 6; // brief pickup flash as feedback
 +  return 1;
++}
++// 1 if any owned ammo type is below max (page disables the button otherwise).
++EMSCRIPTEN_KEEPALIVE int JS_NeedsAmmo(void)
++{
++  player_t* player = &players[consoleplayer];
++  int i;
++
++  if (!playeringame[consoleplayer] || !player->mo ||
++      player->playerstate != PST_LIVE)
++    return 0;
++  for (i = 0; i < NUMAMMO; i++)
++    if (player->ammo[i] < player->maxammo[i])
++      return 1;
++  return 0;
++}
++
++// Rewarded-ad full ammo refill (cooldown handled by the page).
++EMSCRIPTEN_KEEPALIVE int JS_FullAmmo(void)
++{
++  player_t* player = &players[consoleplayer];
++  int i, gave = 0;
++
++  if (!playeringame[consoleplayer] || !player->mo ||
++      player->playerstate != PST_LIVE)
++    return 0;
++
++  for (i = 0; i < NUMAMMO; i++)
++    if (player->ammo[i] < player->maxammo[i])
++    {
++      player->ammo[i] = player->maxammo[i];
++      gave = 1;
++    }
++
++  if (gave)
++    player->bonuscount += 6;
++  return gave;
 +}
 +#endif // __EMSCRIPTEN__

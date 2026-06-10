@@ -124,33 +124,9 @@ def make_wide_stbar(palette, name):
         d.line([(0, H - 1), (side, H - 1)], fill=lo)
         return plate
 
-    def engrave(d, text, font, cx, cy, fill):
-        bbox = d.textbbox((0, 0), text, font=font)
-        tx = cx - (bbox[2] - bbox[0]) // 2 - bbox[0]
-        ty = cy - (bbox[3] - bbox[1]) // 2 - bbox[1]
-        d.text((tx + 1, ty + 1), text, font=font, fill=(14, 14, 14))
-        d.text((tx, ty), text, font=font, fill=fill)
-
-    silver = (190, 186, 178)  # match the bar's engraved label tone
-    f_small = ImageFont.truetype('/System/Library/Fonts/Supplemental/Arial Black.ttf', 8)
-    f_big = ImageFont.truetype('/System/Library/Fonts/Supplemental/Arial Black.ttf', 12)
-
-    left = make_plate()
-    d = ImageDraw.Draw(left)
-    engrave(d, 'MADE BY', f_small, side // 2, 9, silver)
-    engrave(d, name.upper(), f_big, side // 2, 22, silver)
-    wide.paste(left, (0, 0))
-
-    right = make_plate()
-    d = ImageDraw.Draw(right)
-    # red-cross supply emblem — marks the ad heal station
-    cx, cy, a, t = side // 2, H // 2 - 3, 7, 3
-    d.rectangle([cx - a - 1, cy - t // 2 - 1, cx + a + 1, cy + t // 2 + 1], fill=(14, 14, 14))
-    d.rectangle([cx - t // 2 - 1, cy - a - 1, cx + t // 2 + 1, cy + a + 1], fill=(14, 14, 14))
-    d.rectangle([cx - a, cy - t // 2, cx + a, cy + t // 2], fill=(170, 28, 28))
-    d.rectangle([cx - t // 2, cy - a, cx + t // 2, cy + a], fill=(170, 28, 28))
-    engrave(d, 'SUPPLY', f_small, side // 2, H - 7, silver)
-    wide.paste(right, (W_WIDE - side, 0))
+    # plain plates — the HTML ad-reward buttons sit on top of these areas
+    wide.paste(make_plate(), (0, 0))
+    wide.paste(make_plate(), (W_WIDE - side, 0))
     return wide
 
 

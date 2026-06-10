@@ -33,9 +33,11 @@ canvas{border:0;background-color:#000;width:calc(min(100vw,100vh * 4/3));height:
 #giveUpButton{font-size:12px;color:#9a3b3b;padding:9px 0}
 #giveUpButton:hover{color:#d05050}
 #toast{display:none;position:fixed;left:50%;bottom:9vh;transform:translateX(-50%);background:#333;color:#eee;border:1px solid #666;border-radius:8px;padding:10px 22px;font-size:14px;z-index:200;white-space:nowrap}
-#healButton{display:none;position:fixed;z-index:50;padding:7px 12px;font-family:'Arial Black','Helvetica Neue',Arial,sans-serif;font-size:12px;font-weight:900;letter-spacing:1px;text-transform:uppercase;cursor:pointer;color:#ffb000;background:linear-gradient(180deg,#333 0%,#222 50%,#161616 100%);border:2px solid;border-color:#5c5c5c #141414 #141414 #5c5c5c;box-shadow:0 0 0 2px #000;text-shadow:1px 1px 0 #000;white-space:nowrap}
-#healButton:hover:not(:disabled){color:#ffe838;border-color:#8a7434 #1a1408 #1a1408 #8a7434}
-#healButton:disabled{color:#6b6b6b;cursor:default}
+.adRewardBtn{display:none;position:fixed;z-index:50;padding:0;font-family:'Arial Black','Helvetica Neue',Arial,sans-serif;font-weight:900;letter-spacing:1px;text-transform:uppercase;line-height:1.35;cursor:pointer;color:#ffb000;background:linear-gradient(180deg,#3a3a3a 0%,#262626 50%,#181818 100%);border:2px solid;border-color:#5c5c5c #141414 #141414 #5c5c5c;box-shadow:0 0 0 1px #000;text-shadow:1px 1px 0 #000;white-space:nowrap;overflow:hidden}
+.adRewardBtn:hover:not(:disabled){color:#ffe838;border-color:#8a7434 #1a1408 #1a1408 #8a7434}
+.adRewardBtn:disabled{color:#777;cursor:default}
+.adRewardBtn .adTag{display:block;font-size:.72em;color:#c8c4bc;letter-spacing:2px}
+.adRewardBtn:hover:not(:disabled) .adTag{color:#fff}
 </style>
 </head>
 <body>
@@ -61,7 +63,8 @@ canvas{border:0;background-color:#000;width:calc(min(100vw,100vh * 4/3));height:
   </div>
 </div>
 <div id="toast"></div>
-<button id="healButton">&#10010; FULL HEAL</button>
+<button id="ammoButton" class="adRewardBtn"></button>
+<button id="healButton" class="adRewardBtn"></button>
 <script>
 const startContainerElement = document.getElementById('startContainer');
 const startButton = document.getElementById('startButton');
@@ -73,14 +76,14 @@ const canvasElement = document.getElementById('canvas');
 const outputElement = document.getElementById('output');
 const reviveOverlay = document.getElementById('reviveOverlay');
 const healButton = document.getElementById('healButton');
+const ammoButton = document.getElementById('ammoButton');
 const reviveAdButton = document.getElementById('reviveAdButton');
 const giveUpButton = document.getElementById('giveUpButton');
 const toastElement = document.getElementById('toast');
 
 const IWAD_NAME = 'freedoom1.wad';
 const AD_PLACEMENT_REVIVE = 'revive-hero';
-const AD_PLACEMENT_HEAL = 'full-heal';
-const HEAL_COOLDOWN_MS = 5 * 60 * 1000;
+const AD_REWARD_COOLDOWN_MS = 5 * 60 * 1000;
 const SIMULATE_ADS = window.location.search.indexOf('simulateads') !== -1;
 const useTouch = ('maxTouchPoints' in navigator) && navigator.maxTouchPoints > 1 && navigator.maxTouchPoints < 256;
 let userFileDict = {};
@@ -165,7 +168,7 @@ var Module = {
     outputElement.style.display = 'none';
     canvasElement.style.display = 'block';
     canvasElement.focus();
-    startHealButton();
+    startAdButtons();
   },
   showConsole: function () {
     if (useTouch && window.olyOff) olyOff();
@@ -173,7 +176,7 @@ var Module = {
     outputElement.style.display = 'block';
     outputElement.scrollTop = outputElement.scrollHeight;
     outputElement.focus();
-    stopHealButton();
+    stopAdButtons();
   },
   captureMouse: function () {
     if (!useTouch && Module._canLockPointer && !Module._attemptPointerLock()) {
@@ -308,102 +311,123 @@ giveUpButton.addEventListener('click', function () {
   toast(useTouch ? 'Press the ␣ button to restart the level' : 'Press SPACE or E to restart the level');
 });
 
-// ---------- Rewarded-ad full heal (5 min cooldown) ----------
+// ---------- Rewarded-ad reward buttons (sit on the STBAR side plates) ----------
 
-let healTicker = null;
-let healBusy = false;
+const AD_REWARDS = [
+  { btn: ammoButton, side: 'left', placement: 'full-ammo', storageKey: 'lastAmmoAd',
+    hotkey: 'KeyG', label: 'AMMO', toastMsg: '+ AMMO FULLY RESTOCKED', busy: false,
+    canUse: () => Module._JS_NeedsAmmo && Module._JS_NeedsAmmo() === 1,
+    grant: () => Module._JS_FullAmmo && Module._JS_FullAmmo() === 1 },
+  { btn: healButton, side: 'right', placement: 'full-heal', storageKey: 'lastHealAd',
+    hotkey: 'KeyH', label: 'HEAL', toastMsg: '+ HEALTH RESTORED TO 100%', busy: false,
+    canUse: () => { const h = Module._JS_GetHealth(); return h > 0 && h < 100; },
+    grant: () => Module._JS_FullHeal && Module._JS_FullHeal() === 1 },
+];
+let adTicker = null;
 
-function healCooldownLeft() {
-  const last = Number(localStorage.getItem('lastHealAd') || 0);
-  return Math.max(0, last + HEAL_COOLDOWN_MS - Date.now());
+function cooldownLeft(key) {
+  const last = Number(localStorage.getItem(key) || 0);
+  return Math.max(0, last + AD_REWARD_COOLDOWN_MS - Date.now());
 }
 
-function updateHealButton() {
-  if ((!adsAvailable && !SIMULATE_ADS) || typeof Module._JS_GetHealth !== 'function') {
-    healButton.style.display = 'none';
-    return;
-  }
-  // anchor just above the status bar, at the canvas' right edge
+function updateAdButtons() {
   const r = canvasElement.getBoundingClientRect();
-  const barH = r.height * 0.16; // 32/200 of the frame
-  healButton.style.display = 'block';
-  healButton.style.left = (r.right - healButton.offsetWidth - 10) + 'px';
-  healButton.style.top = (r.bottom - barH - healButton.offsetHeight - 8) + 'px';
+  const barH = r.height * 0.16;        // status bar = 32/200 of the frame
+  const sideW = r.width * (53 / 426);  // one side plate of the wide STBAR
+  for (const cfg of AD_REWARDS) {
+    const b = cfg.btn;
+    if ((!adsAvailable && !SIMULATE_ADS) || typeof Module._JS_GetHealth !== 'function' || r.height === 0) {
+      b.style.display = 'none';
+      continue;
+    }
+    const m = Math.max(2, Math.round(barH * 0.07));
+    b.style.display = 'block';
+    b.style.width = Math.round(sideW - 2 * m) + 'px';
+    b.style.height = Math.round(barH - 2 * m) + 'px';
+    // touch overlays (fire/use) live over the right plate — lift buttons above the bar there
+    b.style.top = Math.round(useTouch ? r.bottom - 2 * barH + m : r.bottom - barH + m) + 'px';
+    b.style.left = Math.round(cfg.side === 'left' ? r.left + m : r.right - sideW + m) + 'px';
+    b.style.fontSize = Math.max(9, Math.round(barH * 0.23)) + 'px';
 
-  if (healBusy) return;
-  const left = healCooldownLeft();
-  const health = Module._JS_GetHealth();
-  if (left > 0) {
-    const s = Math.ceil(left / 1000);
-    healButton.disabled = true;
-    healButton.innerHTML = '&#10010; ' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
-  } else if (health < 0 || health >= 100) {
-    healButton.disabled = true;
-    healButton.innerHTML = '&#10010; FULL HEAL &middot; AD';
-  } else {
-    healButton.disabled = false;
-    healButton.innerHTML = '&#9654; FULL HEAL &middot; AD' + (useTouch ? '' : ' [H]');
+    if (cfg.busy) continue;
+    const left = cooldownLeft(cfg.storageKey);
+    if (left > 0) {
+      const s = Math.ceil(left / 1000);
+      b.disabled = true;
+      b.innerHTML = '<span class="adTag">AD &#9654;</span>' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    } else if (!cfg.canUse()) {
+      b.disabled = true;
+      b.innerHTML = '<span class="adTag">AD &#9654;</span>' + cfg.label;
+    } else {
+      b.disabled = false;
+      b.innerHTML = '<span class="adTag">AD &#9654;</span>' + cfg.label + (useTouch ? '' : ' [' + cfg.hotkey.slice(3) + ']');
+    }
   }
 }
 
-function startHealButton() {
-  if (healTicker) return;
-  updateHealButton();
-  healTicker = setInterval(updateHealButton, 1000);
+function startAdButtons() {
+  if (adTicker) return;
+  updateAdButtons();
+  adTicker = setInterval(updateAdButtons, 1000);
 }
 
-function stopHealButton() {
-  clearInterval(healTicker);
-  healTicker = null;
-  healButton.style.display = 'none';
+function stopAdButtons() {
+  clearInterval(adTicker);
+  adTicker = null;
+  for (const cfg of AD_REWARDS) cfg.btn.style.display = 'none';
 }
 
-// H key triggers the heal even while the pointer is locked to the game.
-// Capture phase + stopPropagation keeps the press away from the engine.
+// Hotkeys work even while the pointer is locked to the game. Capture phase +
+// stopPropagation keeps the press away from the engine.
 window.addEventListener('keydown', function (e) {
-  if ((e.code === 'KeyH') && healTicker && !healButton.disabled && !healBusy) {
-    e.stopPropagation();
-    e.preventDefault();
-    healButton.click();
+  for (const cfg of AD_REWARDS) {
+    if (e.code === cfg.hotkey && adTicker && !cfg.btn.disabled && !cfg.busy) {
+      e.stopPropagation();
+      e.preventDefault();
+      cfg.btn.click();
+      return;
+    }
   }
 }, true);
 
-healButton.addEventListener('click', async function () {
-  if (healBusy || healButton.disabled) return;
-  healBusy = true;
-  healButton.disabled = true;
-  if (document.pointerLockElement) document.exitPointerLock();
-  try {
-    const result = SIMULATE_ADS
-      ? await new Promise(r => setTimeout(() => r({ status: 'rewarded' }), 800))
-      : (typeof Verse8Ads === 'undefined'
-          ? { status: 'failed', error: { code: 'unsupported_env' } }
-          : await Verse8Ads.showRewarded({ placementId: AD_PLACEMENT_HEAL }));
-    switch (result.status) {
-      case 'rewarded':
-        if (Module._JS_FullHeal && Module._JS_FullHeal() === 1) {
-          localStorage.setItem('lastHealAd', String(Date.now()));
-          toast('+ HEALTH RESTORED TO 100%');
-        }
-        break;
-      case 'dismissed':
-        toast('Watch the full ad to refill health');
-        break;
-      case 'failed':
-        if (result.error.code === 'unsupported_env') { adsAvailable = false; stopHealButton(); }
-        else if (result.error.code !== 'busy') toast('Ad unavailable — please try again later');
-        break;
+for (const cfg of AD_REWARDS) {
+  cfg.btn.addEventListener('click', async function () {
+    if (cfg.busy || cfg.btn.disabled) return;
+    cfg.busy = true;
+    cfg.btn.disabled = true;
+    if (document.pointerLockElement) document.exitPointerLock();
+    try {
+      const result = SIMULATE_ADS
+        ? await new Promise(r => setTimeout(() => r({ status: 'rewarded' }), 800))
+        : (typeof Verse8Ads === 'undefined'
+            ? { status: 'failed', error: { code: 'unsupported_env' } }
+            : await Verse8Ads.showRewarded({ placementId: cfg.placement }));
+      switch (result.status) {
+        case 'rewarded':
+          if (cfg.grant()) {
+            localStorage.setItem(cfg.storageKey, String(Date.now()));
+            toast(cfg.toastMsg);
+          }
+          break;
+        case 'dismissed':
+          toast('Watch the full ad to claim the reward');
+          break;
+        case 'failed':
+          if (result.error.code === 'unsupported_env') { adsAvailable = false; stopAdButtons(); }
+          else if (result.error.code !== 'busy') toast('Ad unavailable — please try again later');
+          break;
+      }
+    } catch (e) {
+      console.error('Ad error:', e);
+      toast('Ad unavailable — please try again later');
+    } finally {
+      cfg.busy = false;
+      canvasElement.focus();
+      Module.captureMouse();
+      updateAdButtons();
     }
-  } catch (e) {
-    console.error('Heal ad error:', e);
-    toast('Ad unavailable — please try again later');
-  } finally {
-    healBusy = false;
-    canvasElement.focus();
-    Module.captureMouse();
-    updateHealButton();
-  }
-});
+  });
+}
 
 // ---------- Boot sequence ----------
 

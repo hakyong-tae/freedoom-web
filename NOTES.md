@@ -46,11 +46,16 @@ freedoom-web/
   - `Module._JS_GetHealth()` — 현재 체력 (인게임 아니면 -1)
   - `Module._JS_FullHeal()` — 체력 100% 회복 (생존+미만일 때만 1 반환)
 
-## 광고 풀힐 버튼 (full-heal placement)
-- 캔버스 우하단(상태바 SUPPLY 명판 위)에 떠 있는 HTML 버튼 — 상태바는 캔버스 안 그림이라 직접 클릭 불가
-- 5분 쿨다운 (`localStorage.lastHealAd`), 쿨다운 중엔 M:SS 카운트다운 표시
-- 체력 100%거나 인게임 아니면 비활성, `unsupported_env`면 세션 동안 숨김
-- rewarded → `_JS_FullHeal()` → 쿨다운 시작 + 픽업 플래시 피드백
+## 광고 보상 버튼 2종 (STBAR 양옆 명판 위에 배치)
+- 와이드 STBAR(426px)의 양옆 53px 민무늬 금속판 위에 HTML 버튼이 겹쳐 앉음
+  (상태바는 캔버스 안 그림이라 직접 클릭 불가 → HTML 오버레이로 처리)
+- 왼쪽: **FULL AMMO** (`full-ammo` placement, 핫키 G, `_JS_NeedsAmmo`/`_JS_FullAmmo`)
+- 오른쪽: **FULL HEAL** (`full-heal` placement, 핫키 H, `_JS_GetHealth`/`_JS_FullHeal`)
+- 두 줄 라벨: "AD ▶" / "HEAL [H]" — 광고 시청 조건 명시
+- 각자 5분 쿨다운 (`localStorage.lastHealAd`/`lastAmmoAd`), 쿨다운 중 M:SS 표시
+- 체력/탄약이 이미 가득이거나 인게임 아니면 비활성, `unsupported_env`면 숨김
+- 핫키는 캡처 단계에서 가로채 엔진에 전달 안 됨 (포인터락 중에도 동작)
+- 터치 기기는 oly 발사/사용 버튼과 겹쳐서 명판 위가 아니라 바로 위층에 배치
 - **플로우**: 사망 → 오버레이("광고 보고 부활"/"포기") → `Verse8Ads.showRewarded({placementId:'revive-hero'})`
   - `rewarded` → `_JS_RevivePlayer()` / `dismissed` → 토스트+재시도 / `unsupported_env` → 세션 동안 부활 UI 비활성(바닐라 사망 흐름)
 - 보상이 저가치(부활 1회)라 서버 검증은 생략 (Verse8 docs 권고)
