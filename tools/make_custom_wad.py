@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Build public/custom.wad (PWAD) with custom art converted to DOOM format.
 
-Usage: python3 tools/make_custom_wad.py <titlepic-image> [interpic-image]
+Usage: python3 tools/make_custom_wad.py <titlepic-image> [interpic-image] [menu-logo-rgba]
 
 - Extracts PLAYPAL from public/freedoom1.wad
-- Center-crops each source to 4:3, squashes to 320x200 (DOOM pixels are
+- Fullscreen lumps: center-crops to 4:3, squashes to 320x200 (DOOM pixels are
   displayed 20% taller, so the on-screen result matches the source crop)
+- Menu logo (M_DOOM): keeps alpha as patch-format transparency, scales to
+  60px-high buffer, sets leftoffset so the engine centers it at x=160
 - Quantizes to the DOOM palette and encodes the patch (column/post) format
 """
 import struct
@@ -30,24 +32,38 @@ def read_lump(wad_path, want):
     raise KeyError(want)
 
 
-def to_doom_patch(im, palette):
-    """Encode a fully-opaque image as a DOOM patch graphic."""
+def quantize(im, palette):
     pal_img = Image.new('P', (1, 1))
     pal_img.putpalette(palette + palette[:3] * (256 - len(palette) // 3))
-    idx = im.convert('RGB').quantize(palette=pal_img, dither=Image.FLOYDSTEINBERG)
+    return im.convert('RGB').quantize(palette=pal_img, dither=Image.FLOYDSTEINBERG)
+
+
+def to_doom_patch(im, palette, leftoffset=0, topoffset=0):
+    """Encode an image as a DOOM patch; RGBA alpha becomes post transparency."""
+    alpha = im.split()[3].load() if im.mode == 'RGBA' else None
+    idx = quantize(im, palette)
     px = idx.load()
     w, h = im.size
 
-    header = struct.pack('<HHhh', w, h, 0, 0)
+    header = struct.pack('<HHhh', w, h, leftoffset, topoffset)
     col_offsets = []
     body = bytearray()
     base = len(header) + 4 * w
     for x in range(w):
         col_offsets.append(base + len(body))
-        # single opaque post per column (h <= 254)
-        body += bytes([0, h, 0])
-        body += bytes(px[x, y] for y in range(h))
-        body += bytes([0, 0xFF])
+        y = 0
+        while y < h:
+            while y < h and alpha and alpha[x, y] <= 127:
+                y += 1
+            if y >= h:
+                break
+            top = y
+            while y < h and (not alpha or alpha[x, y] > 127):
+                y += 1
+            body += bytes([top, y - top, 0])
+            body += bytes(px[x, yy] for yy in range(top, y))
+            body += bytes([0])
+        body += bytes([0xFF])
     return header + b''.join(struct.pack('<i', o) for o in col_offsets) + bytes(body)
 
 
@@ -87,9 +103,16 @@ def main():
     lumps = [('TITLEPIC', to_doom_patch(load_fullscreen(sys.argv[1]), palette))]
     if len(sys.argv) > 2:
         lumps.append(('INTERPIC', to_doom_patch(load_fullscreen(sys.argv[2]), palette)))
+    if len(sys.argv) > 3:
+        logo = Image.open(sys.argv[3]).convert('RGBA')
+        hb = 60  # menu logo sits above the items (y=2..62); engine draws it at x=94
+        wb = round(logo.size[0] / logo.size[1] * 1.2 * hb)
+        logo = logo.resize((wb, hb), Image.LANCZOS)
+        lumps.append(('M_DOOM', to_doom_patch(logo, palette, leftoffset=wb // 2 - 66)))
     build_pwad(lumps, OUT)
     for name, data in lumps:
-        print(f'{OUT}: {name} {W}x{H}, {len(data)} bytes')
+        w, h = struct.unpack_from('<HH', data, 0)
+        print(f'{OUT}: {name} {w}x{h}, {len(data)} bytes')
 
 
 if __name__ == '__main__':
