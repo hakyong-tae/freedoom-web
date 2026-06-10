@@ -10,7 +10,11 @@
 body{background-color:#202020;color:#e0e0e0;font-family:Arial,Helvetica,sans-serif;font-size:16px;margin:0;text-align:center}
 #startContainer{position:fixed;inset:0;background:radial-gradient(ellipse at center,rgba(60,0,0,.45) 0%,rgba(15,0,0,.92) 100%),#161616;display:flex;flex-direction:column;align-items:center;justify-content:center}
 #startContainer h1{margin:0 0 4px;font-family:'Arial Black','Helvetica Neue',Arial,sans-serif;font-size:64px;font-weight:900;letter-spacing:4px;text-transform:uppercase;color:#e21313;text-shadow:0 0 22px rgba(255,30,0,.6),4px 4px 0 #4a0000,6px 6px 0 #000;-webkit-text-stroke:1px #2a0000}
-#startContainer p{margin:0 0 34px;color:#b8a890;font-size:13px;letter-spacing:4px;text-transform:uppercase;text-shadow:1px 1px 0 #000}
+#startContainer p{margin:0 0 26px;color:#b8a890;font-size:13px;letter-spacing:4px;text-transform:uppercase;text-shadow:1px 1px 0 #000}
+#controlsHint{margin:0 auto 26px;border-collapse:collapse;font-size:12px;letter-spacing:2px;text-transform:uppercase;text-shadow:1px 1px 0 #000}
+#controlsHint td{padding:3px 14px;text-align:left}
+#controlsHint td:first-child{color:#8a8378;text-align:right}
+#controlsHint td:last-child{color:#ffb000}
 #startButton{min-width:300px;padding:16px 48px;font-family:'Arial Black','Helvetica Neue',Arial,sans-serif;font-size:19px;font-weight:900;letter-spacing:3px;text-transform:uppercase;cursor:pointer;color:#ffb000;background:linear-gradient(180deg,#333 0%,#222 50%,#161616 100%);border:2px solid;border-color:#5c5c5c #141414 #141414 #5c5c5c;box-shadow:0 0 0 2px #000,0 8px 30px rgba(0,0,0,.7);text-shadow:2px 2px 0 #000}
 #startButton:hover:not(:disabled){color:#ffe838;background:linear-gradient(180deg,#3d3424 0%,#2a2317 50%,#1a160e 100%);border-color:#8a7434 #1a1408 #1a1408 #8a7434}
 #startButton:disabled{color:#6b6b6b;cursor:default}
@@ -44,6 +48,7 @@ canvas{border:0;background-color:#000;width:calc(min(100vw,100vh * 4/3));height:
 <div id="startContainer">
   <h1>V8m</h1>
   <p>Powered by Yong</p>
+  <table id="controlsHint"></table>
   <button id="startButton" disabled>LOADING...</button>
   <p style="margin-top:22px;margin-bottom:0"><progress value="0" max="100" id="dlProgress"></progress></p>
 </div>
@@ -347,7 +352,7 @@ function updateAdButtons() {
     b.style.width = bw + 'px';
     b.style.height = bh + 'px';
     // touch overlays (fire/use) live over the right plate — lift buttons above the bar there
-    b.style.top = Math.round((useTouch ? r.bottom - 2 * barH : r.bottom - barH) + (barH - bh) / 2) + 'px';
+    b.style.top = Math.round((useTouch ? r.bottom - 2 * barH : r.bottom - barH) + (barH - bh) / 2 + 5) + 'px';
     b.style.left = Math.round((cfg.side === 'left' ? r.left : r.right - sideW) + (sideW - bw) / 2) + 'px';
     b.style.fontSize = Math.max(8, Math.round(Math.min(barH * 0.15, bw / 7))) + 'px';
 
@@ -524,6 +529,16 @@ startButton.addEventListener('click', function () {
   if (!iwadReady) return;
   startGame();
 });
+
+(function fillControlsHint() {
+  const rows = useTouch
+    ? [['Move / Aim', 'On-screen pad'], ['Fire / Use', 'On-screen buttons'], ['Heal / Ammo', 'Tap AD buttons']]
+    : [['Move', 'W A S D'], ['Aim / Fire', 'Mouse'], ['Use / Open', 'Space &middot; E'],
+       ['Weapons', '1 &ndash; 7'], ['Full Heal &middot; AD', 'H'], ['Full Ammo &middot; AD', 'G'],
+       ['Menu / Help', 'Esc &middot; F1']];
+  document.getElementById('controlsHint').innerHTML =
+    rows.map(r => '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>').join('');
+})();
 
 outputElement.value = '';
 Promise.all([fetchIWAD(), fetchOptionalPWAD()]).catch(function (err) {
