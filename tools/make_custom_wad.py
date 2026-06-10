@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Build public/custom.wad (PWAD) with custom art converted to DOOM format.
 
-Usage: python3 tools/make_custom_wad.py <titlepic-image>
+Usage: python3 tools/make_custom_wad.py <titlepic-image> [interpic-image]
 
 - Extracts PLAYPAL from public/freedoom1.wad
-- Center-crops the source to 4:3, squashes to 320x200 (DOOM pixels are
+- Center-crops each source to 4:3, squashes to 320x200 (DOOM pixels are
   displayed 20% taller, so the on-screen result matches the source crop)
 - Quantizes to the DOOM palette and encodes the patch (column/post) format
 """
@@ -65,12 +65,8 @@ def build_pwad(lumps, out_path):
             f.write(struct.pack('<ii8s', pos, size, name.encode('ascii')))
 
 
-def main():
-    src = sys.argv[1]
-    playpal = read_lump(IWAD, 'PLAYPAL')
-    palette = list(playpal[:768])
-
-    im = Image.open(src)
+def load_fullscreen(path):
+    im = Image.open(path)
     if im.mode == 'RGBA':
         bg = Image.new('RGB', im.size, (0, 0, 0))
         bg.paste(im, mask=im.split()[3])
@@ -81,11 +77,19 @@ def main():
     crop_h = min(h, int(crop_w * 3 / 4))
     left = (w - crop_w) // 2
     top = (h - crop_h) // 2
-    im = im.crop((left, top, left + crop_w, top + crop_h)).resize((W, H), Image.LANCZOS)
+    return im.crop((left, top, left + crop_w, top + crop_h)).resize((W, H), Image.LANCZOS)
 
-    titlepic = to_doom_patch(im, palette)
-    build_pwad([('TITLEPIC', titlepic)], OUT)
-    print(f'{OUT}: TITLEPIC {W}x{H}, {len(titlepic)} bytes')
+
+def main():
+    playpal = read_lump(IWAD, 'PLAYPAL')
+    palette = list(playpal[:768])
+
+    lumps = [('TITLEPIC', to_doom_patch(load_fullscreen(sys.argv[1]), palette))]
+    if len(sys.argv) > 2:
+        lumps.append(('INTERPIC', to_doom_patch(load_fullscreen(sys.argv[2]), palette)))
+    build_pwad(lumps, OUT)
+    for name, data in lumps:
+        print(f'{OUT}: {name} {W}x{H}, {len(data)} bytes')
 
 
 if __name__ == '__main__':
