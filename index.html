@@ -339,10 +339,10 @@ function updateHealButton() {
     healButton.innerHTML = '&#10010; ' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
   } else if (health < 0 || health >= 100) {
     healButton.disabled = true;
-    healButton.innerHTML = '&#10010; FULL HEAL' + (useTouch ? '' : ' [H]');
+    healButton.innerHTML = '&#10010; FULL HEAL &middot; AD';
   } else {
     healButton.disabled = false;
-    healButton.innerHTML = '&#9654; FULL HEAL' + (useTouch ? '' : ' [H]');
+    healButton.innerHTML = '&#9654; FULL HEAL &middot; AD' + (useTouch ? '' : ' [H]');
   }
 }
 
