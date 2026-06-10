@@ -339,10 +339,10 @@ function updateHealButton() {
     healButton.innerHTML = '&#10010; ' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
   } else if (health < 0 || health >= 100) {
     healButton.disabled = true;
-    healButton.innerHTML = '&#10010; FULL HEAL';
+    healButton.innerHTML = '&#10010; FULL HEAL' + (useTouch ? '' : ' [H]');
   } else {
     healButton.disabled = false;
-    healButton.innerHTML = '&#9654; FULL HEAL';
+    healButton.innerHTML = '&#9654; FULL HEAL' + (useTouch ? '' : ' [H]');
   }
 }
 
@@ -358,10 +358,21 @@ function stopHealButton() {
   healButton.style.display = 'none';
 }
 
+// H key triggers the heal even while the pointer is locked to the game.
+// Capture phase + stopPropagation keeps the press away from the engine.
+window.addEventListener('keydown', function (e) {
+  if ((e.code === 'KeyH') && healTicker && !healButton.disabled && !healBusy) {
+    e.stopPropagation();
+    e.preventDefault();
+    healButton.click();
+  }
+}, true);
+
 healButton.addEventListener('click', async function () {
   if (healBusy || healButton.disabled) return;
   healBusy = true;
   healButton.disabled = true;
+  if (document.pointerLockElement) document.exitPointerLock();
   try {
     const result = SIMULATE_ADS
       ? await new Promise(r => setTimeout(() => r({ status: 'rewarded' }), 800))
@@ -389,6 +400,7 @@ healButton.addEventListener('click', async function () {
   } finally {
     healBusy = false;
     canvasElement.focus();
+    Module.captureMouse();
     updateHealButton();
   }
 });
