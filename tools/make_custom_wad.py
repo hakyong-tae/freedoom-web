@@ -98,8 +98,10 @@ def decode_patch(p, palette):
 
 
 def make_wide_stbar(palette, name):
-    """Widescreen STBAR: original 320x32 bar centered, name plates on the
-    16:9 side extensions (the engine centers any wider-than-320 STBAR)."""
+    """Widescreen STBAR: original 320x32 bar centered, side plates built from
+    the bar's own sampled metal texture (the engine centers any
+    wider-than-320 STBAR). Left: maker credit. Right: ad-supply marker that
+    the floating heal button sits next to."""
     from PIL import ImageDraw, ImageFont
 
     bar = decode_patch(read_lump(IWAD, 'STBAR'), palette)
@@ -108,25 +110,47 @@ def make_wide_stbar(palette, name):
     wide = Image.new('RGB', (W_WIDE, H))
     wide.paste(bar, (side, 0))
 
-    # beveled dark-metal plates matching the bar's palette
-    plate = Image.new('RGB', (side, H), (62, 62, 62))
-    d = ImageDraw.Draw(plate)
-    for y in range(H):  # subtle vertical shading
-        v = 70 - abs(y - H // 2)
-        d.line([(0, y), (side, y)], fill=(v, v, v))
-    d.line([(0, 0), (side, 0)], fill=(110, 110, 110))      # top highlight
-    d.line([(0, H - 1), (side, H - 1)], fill=(20, 20, 20))  # bottom shadow
+    def make_plate():
+        # tile real bar metal (recessed panel interior) so the tone matches
+        tex = bar.crop((196, 4, 232, 26))
+        plate = Image.new('RGB', (side, H))
+        for ty in range(0, H, tex.size[1]):
+            for tx in range(0, side, tex.size[0]):
+                plate.paste(tex, (tx, ty))
+        d = ImageDraw.Draw(plate)
+        hi = bar.getpixel((160, 0))       # bar's own edge highlight
+        lo = bar.getpixel((160, 31))      # bar's own bottom shadow
+        d.line([(0, 0), (side, 0)], fill=hi)
+        d.line([(0, H - 1), (side, H - 1)], fill=lo)
+        return plate
 
-    font = ImageFont.truetype('/System/Library/Fonts/Supplemental/Arial Black.ttf', 13)
-    for flip, x0 in ((False, 0), (True, W_WIDE - side)):
-        p = plate.copy()
-        d = ImageDraw.Draw(p)
-        bbox = d.textbbox((0, 0), name, font=font)
-        tx = (side - (bbox[2] - bbox[0])) // 2 - bbox[0]
-        ty = (H - (bbox[3] - bbox[1])) // 2 - bbox[1] - 1
-        d.text((tx + 1, ty + 1), name, font=font, fill=(18, 18, 18))   # engraved shadow
-        d.text((tx, ty), name, font=font, fill=(168, 30, 30))           # blood-red label
-        wide.paste(p, (x0, 0))
+    def engrave(d, text, font, cx, cy, fill):
+        bbox = d.textbbox((0, 0), text, font=font)
+        tx = cx - (bbox[2] - bbox[0]) // 2 - bbox[0]
+        ty = cy - (bbox[3] - bbox[1]) // 2 - bbox[1]
+        d.text((tx + 1, ty + 1), text, font=font, fill=(14, 14, 14))
+        d.text((tx, ty), text, font=font, fill=fill)
+
+    silver = (190, 186, 178)  # match the bar's engraved label tone
+    f_small = ImageFont.truetype('/System/Library/Fonts/Supplemental/Arial Black.ttf', 8)
+    f_big = ImageFont.truetype('/System/Library/Fonts/Supplemental/Arial Black.ttf', 12)
+
+    left = make_plate()
+    d = ImageDraw.Draw(left)
+    engrave(d, 'MADE BY', f_small, side // 2, 9, silver)
+    engrave(d, name.upper(), f_big, side // 2, 22, silver)
+    wide.paste(left, (0, 0))
+
+    right = make_plate()
+    d = ImageDraw.Draw(right)
+    # red-cross supply emblem — marks the ad heal station
+    cx, cy, a, t = side // 2, H // 2 - 3, 7, 3
+    d.rectangle([cx - a - 1, cy - t // 2 - 1, cx + a + 1, cy + t // 2 + 1], fill=(14, 14, 14))
+    d.rectangle([cx - t // 2 - 1, cy - a - 1, cx + t // 2 + 1, cy + a + 1], fill=(14, 14, 14))
+    d.rectangle([cx - a, cy - t // 2, cx + a, cy + t // 2], fill=(170, 28, 28))
+    d.rectangle([cx - t // 2, cy - a, cx + t // 2, cy + a], fill=(170, 28, 28))
+    engrave(d, 'SUPPLY', f_small, side // 2, H - 7, silver)
+    wide.paste(right, (W_WIDE - side, 0))
     return wide
 
 

@@ -30,10 +30,10 @@ index dc53927..a39a6cf 100644
  
    if (e6y)
 diff --git a/src/p_user.c b/src/p_user.c
-index 4aa2e58..15c873f 100644
+index 4aa2e58..cae809b 100644
 --- a/src/p_user.c
 +++ b/src/p_user.c
-@@ -588,3 +588,52 @@ void P_PlayerThink (player_t* player)
+@@ -588,3 +588,76 @@ void P_PlayerThink (player_t* player)
      player->powers[pw_invulnerability] & 8) ? INVERSECOLORMAP :
      player->powers[pw_infrared] > 4*32 || player->powers[pw_infrared] & 8;
  }
@@ -48,6 +48,7 @@ index 4aa2e58..15c873f 100644
 +#include <emscripten.h>
 +
 +extern int initial_health; // from p_inter.h / g_game.c
++extern int maxhealth;
 +
 +EMSCRIPTEN_KEEPALIVE int JS_PlayerIsDead(void)
 +{
@@ -83,6 +84,29 @@ index 4aa2e58..15c873f 100644
 +  player->refire = 0;
 +  player->powers[pw_invulnerability] = 3*TICRATE; // 3s of mercy after ad revive
 +  P_SetupPsprites(player);
++  return 1;
++}
++// Rewarded-ad full heal (cooldown handled by the page).
++EMSCRIPTEN_KEEPALIVE int JS_GetHealth(void)
++{
++  if (!playeringame[consoleplayer] || !players[consoleplayer].mo)
++    return -1;
++  return players[consoleplayer].health;
++}
++
++EMSCRIPTEN_KEEPALIVE int JS_FullHeal(void)
++{
++  player_t* player = &players[consoleplayer];
++
++  if (!playeringame[consoleplayer] || !player->mo ||
++      player->playerstate != PST_LIVE)
++    return 0;
++  if (player->health >= maxhealth)
++    return 0;
++
++  player->health = maxhealth;
++  player->mo->health = maxhealth;
++  player->bonuscount += 6; // brief pickup flash as feedback
 +  return 1;
 +}
 +#endif // __EMSCRIPTEN__

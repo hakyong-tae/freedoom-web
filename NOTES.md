@@ -43,6 +43,14 @@ freedoom-web/
 - **JS→C** (EMSCRIPTEN_KEEPALIVE export):
   - `Module._JS_PlayerIsDead()` — 부활 제안 유효성 폴링 (400ms 워처가 오버레이 자동 철회)
   - `Module._JS_RevivePlayer()` — 그 자리 부활 (체력/충돌플래그/스테이트/시점/무기 복원 + 3초 무적 `pw_invulnerability`)
+  - `Module._JS_GetHealth()` — 현재 체력 (인게임 아니면 -1)
+  - `Module._JS_FullHeal()` — 체력 100% 회복 (생존+미만일 때만 1 반환)
+
+## 광고 풀힐 버튼 (full-heal placement)
+- 캔버스 우하단(상태바 SUPPLY 명판 위)에 떠 있는 HTML 버튼 — 상태바는 캔버스 안 그림이라 직접 클릭 불가
+- 5분 쿨다운 (`localStorage.lastHealAd`), 쿨다운 중엔 M:SS 카운트다운 표시
+- 체력 100%거나 인게임 아니면 비활성, `unsupported_env`면 세션 동안 숨김
+- rewarded → `_JS_FullHeal()` → 쿨다운 시작 + 픽업 플래시 피드백
 - **플로우**: 사망 → 오버레이("광고 보고 부활"/"포기") → `Verse8Ads.showRewarded({placementId:'revive-hero'})`
   - `rewarded` → `_JS_RevivePlayer()` / `dismissed` → 토스트+재시도 / `unsupported_env` → 세션 동안 부활 UI 비활성(바닐라 사망 흐름)
 - 보상이 저가치(부활 1회)라 서버 검증은 생략 (Verse8 docs 권고)
