@@ -4,15 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,height=device-height,initial-scale=1">
 <meta name="description" content="Freedoom in your browser — WebAssembly port based on Dwasm (PrBoom+/PrBoomX, GPL-2.0)">
-<title>Freedoom Web</title>
+<title>V8-Doom</title>
 <script src="https://unpkg.com/@verse8/ads@latest/dist/index.global.js" crossorigin="anonymous"></script>
 <style>
 body{background-color:#202020;color:#e0e0e0;font-family:Arial,Helvetica,sans-serif;font-size:16px;margin:0;text-align:center}
-#startContainer{padding-top:24vh}
-#startContainer h1{font-size:42px;letter-spacing:4px;margin-bottom:8px}
-#startContainer p{color:#909090;margin-top:0}
-#startButton{font-size:20px;font-weight:bold;padding:16px 48px;margin-top:24px;border:2px solid #b03030;border-radius:8px;background:#802020;color:#fff;cursor:pointer}
-#startButton:disabled{background:#404040;border-color:#555;color:#888;cursor:default}
+#startContainer{position:fixed;inset:0;background:radial-gradient(ellipse at center,rgba(60,0,0,.45) 0%,rgba(15,0,0,.92) 100%),#161616;display:flex;flex-direction:column;align-items:center;justify-content:center}
+#startContainer h1{margin:0 0 4px;font-family:'Arial Black','Helvetica Neue',Arial,sans-serif;font-size:64px;font-weight:900;letter-spacing:4px;text-transform:uppercase;color:#e21313;text-shadow:0 0 22px rgba(255,30,0,.6),4px 4px 0 #4a0000,6px 6px 0 #000;-webkit-text-stroke:1px #2a0000}
+#startContainer p{margin:0 0 34px;color:#b8a890;font-size:13px;letter-spacing:4px;text-transform:uppercase;text-shadow:1px 1px 0 #000}
+#startButton{min-width:300px;padding:16px 48px;font-family:'Arial Black','Helvetica Neue',Arial,sans-serif;font-size:19px;font-weight:900;letter-spacing:3px;text-transform:uppercase;cursor:pointer;color:#ffb000;background:linear-gradient(180deg,#333 0%,#222 50%,#161616 100%);border:2px solid;border-color:#5c5c5c #141414 #141414 #5c5c5c;box-shadow:0 0 0 2px #000,0 8px 30px rgba(0,0,0,.7);text-shadow:2px 2px 0 #000}
+#startButton:hover:not(:disabled){color:#ffe838;background:linear-gradient(180deg,#3d3424 0%,#2a2317 50%,#1a160e 100%);border-color:#8a7434 #1a1408 #1a1408 #8a7434}
+#startButton:disabled{color:#6b6b6b;cursor:default}
+#dlProgress{accent-color:#b02020}
 #statusContainer{display:none;padding-top:30vh}
 .spinner{height:50px;width:50px;margin:0 auto 16px;animation:rotation .8s linear infinite;border-left:10px solid #606060;border-right:10px solid #606060;border-bottom:10px solid #606060;border-top:10px solid #fff;border-radius:100%}
 @keyframes rotation{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
@@ -35,10 +37,10 @@ canvas{border:0;background-color:#000;width:calc(min(100vw,100vh * 4/3));height:
 </head>
 <body>
 <div id="startContainer">
-  <h1>FREEDOOM</h1>
-  <p>Phase 1 &middot; powered by Dwasm (PrBoom+)</p>
+  <h1>V8-Doom</h1>
+  <p>Powered by Yong</p>
   <button id="startButton" disabled>LOADING...</button>
-  <p style="margin-top:18px"><progress value="0" max="100" id="dlProgress"></progress></p>
+  <p style="margin-top:22px;margin-bottom:0"><progress value="0" max="100" id="dlProgress"></progress></p>
 </div>
 <div id="statusContainer">
   <div class="spinner"></div>

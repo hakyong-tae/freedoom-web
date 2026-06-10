@@ -1,6 +1,6 @@
-# Freedoom Web
+# V8-Doom (freedoom-web)
 
-Freedoom Phase 1 running in the browser, packaged as a Vite project.
+Freedoom Phase 1 running in the browser, packaged as a Vite project for Verse8.
 
 ## Play
 
