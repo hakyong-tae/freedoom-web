@@ -340,14 +340,16 @@ function updateAdButtons() {
       b.style.display = 'none';
       continue;
     }
-    const m = Math.max(2, Math.round(barH * 0.07));
+    // half-size buttons centered on the side plates
+    const bw = Math.round(sideW * 0.5);
+    const bh = Math.round(barH * 0.5);
     b.style.display = 'block';
-    b.style.width = Math.round(sideW - 2 * m) + 'px';
-    b.style.height = Math.round(barH - 2 * m) + 'px';
+    b.style.width = bw + 'px';
+    b.style.height = bh + 'px';
     // touch overlays (fire/use) live over the right plate — lift buttons above the bar there
-    b.style.top = Math.round(useTouch ? r.bottom - 2 * barH + m : r.bottom - barH + m) + 'px';
-    b.style.left = Math.round(cfg.side === 'left' ? r.left + m : r.right - sideW + m) + 'px';
-    b.style.fontSize = Math.max(9, Math.round(barH * 0.23)) + 'px';
+    b.style.top = Math.round((useTouch ? r.bottom - 2 * barH : r.bottom - barH) + (barH - bh) / 2) + 'px';
+    b.style.left = Math.round((cfg.side === 'left' ? r.left : r.right - sideW) + (sideW - bw) / 2) + 'px';
+    b.style.fontSize = Math.max(8, Math.round(barH * 0.12)) + 'px';
 
     if (cfg.busy) continue;
     const left = cooldownLeft(cfg.storageKey);
@@ -360,7 +362,7 @@ function updateAdButtons() {
       b.innerHTML = '<span class="adTag">AD &#9654;</span>' + cfg.label;
     } else {
       b.disabled = false;
-      b.innerHTML = '<span class="adTag">AD &#9654;</span>' + cfg.label + (useTouch ? '' : ' [' + cfg.hotkey.slice(3) + ']');
+      b.innerHTML = '<span class="adTag">AD &#9654;' + (useTouch ? '' : ' &middot; ' + cfg.hotkey.slice(3)) + '</span>' + cfg.label;
     }
   }
 }
