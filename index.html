@@ -288,37 +288,43 @@ function doRevive() {
   }
 }
 
-// showRewardedAdWithFallback: tries real Verse8 ad first.
-// If unavailable (local/unsupported_env), shows a 10-second in-game countdown
-// then grants the reward automatically.
+// showRewardedAdWithFallback: shows a 10-second in-game "ad break" countdown
+// IMMEDIATELY (onTick(10) fires synchronously), and in parallel attempts a real
+// Verse8 ad. A genuine 'rewarded' from the real ad grants instantly; otherwise
+// the house countdown runs to 0 and grants the reward. This keeps the countdown
+// visible from the first frame in preview/unsupported environments instead of
+// waiting for the real-ad attempt to fail first.
 // onTick(t): called each second with remaining seconds; t=0 means done, hide UI.
-async function showRewardedAdWithFallback(placementId, onTick) {
+function showRewardedAdWithFallback(placementId, onTick) {
   if (SIMULATE_ADS) {
-    if (onTick) onTick(3);
-    await new Promise(r => setTimeout(r, 800));
-    if (onTick) onTick(0);
-    return { status: 'rewarded' };
+    return new Promise(function (resolve) {
+      if (onTick) onTick(3);
+      setTimeout(function () { if (onTick) onTick(0); resolve({ status: 'rewarded' }); }, 800);
+    });
   }
-  if (typeof Verse8Ads !== 'undefined') {
-    let result;
-    try { result = await Verse8Ads.showRewarded({ placementId }); }
-    catch (e) { result = { status: 'failed', error: { code: 'error' } }; }
-    // Real ad gave a definitive result — use it
-    if (result.status === 'rewarded' || result.status === 'dismissed' ||
-        (result.status === 'failed' && result.error && result.error.code === 'busy')) {
-      if (onTick) onTick(0);
-      return result;
-    }
-    // Any failure (unsupported_env, network, …) → fall through to countdown
-  }
-  // 10-second fallback: real ad not available, show countdown then grant reward
   return new Promise(function (resolve) {
+    var done = false;
+    function finish(res) {
+      if (done) return;
+      done = true;
+      clearInterval(timer);
+      if (onTick) onTick(0);
+      resolve(res);
+    }
+    // Real ad in parallel — only a genuine 'rewarded' short-circuits the house
+    // countdown. dismissed/failed are ignored; the countdown still grants.
+    if (typeof Verse8Ads !== 'undefined') {
+      Verse8Ads.showRewarded({ placementId })
+        .then(function (r) { if (r && r.status === 'rewarded') finish({ status: 'rewarded' }); })
+        .catch(function () {});
+    }
+    // House countdown — shows from 10 right away, grants after 10s.
     var t = 10;
     if (onTick) onTick(t);
     var timer = setInterval(function () {
       t--;
       if (onTick) onTick(t);
-      if (t <= 0) { clearInterval(timer); resolve({ status: 'rewarded' }); }
+      if (t <= 0) finish({ status: 'rewarded' });
     }, 1000);
   });
 }
@@ -329,7 +335,7 @@ reviveAdButton.addEventListener('click', async function () {
   reviveAdButton.disabled = true;
   function reviveOnTick(t) {
     if (t <= 0) { reviveAdButton.innerHTML = '&#9658; Watch Ad to Revive'; }
-    else { reviveAdButton.innerHTML = '<span class="adTag">AD PLAYING</span>' + t + 's'; }
+    else { reviveAdButton.innerHTML = '&#9658; AD PLAYING &middot; ' + t + 's'; }
   }
   try {
     const result = await showRewardedAdWithFallback(AD_PLACEMENT_REVIVE, reviveOnTick);
@@ -448,7 +454,7 @@ for (const cfg of AD_REWARDS) {
     if (document.pointerLockElement) document.exitPointerLock();
     // Pause the game and show full-screen overlay before any ad starts
     if (Module._JS_SetPaused) Module._JS_SetPaused(1);
-    adBreakCountElement.textContent = '...';
+    adBreakCountElement.textContent = '10';
     adSpinnerElement.style.display = 'block';
     function stbarOnTick(t) {
       if (t > 0) adBreakCountElement.textContent = t;
